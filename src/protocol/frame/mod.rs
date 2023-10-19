@@ -11,7 +11,10 @@ use crate::{
     Message, ReadBuffer,
 };
 use log::*;
-use std::io::{Error as IoError, ErrorKind as IoErrorKind, Read, Write};
+use std::{
+    io::{Error as IoError, ErrorKind as IoErrorKind, Read, Write},
+    time::{Duration, Instant},
+};
 
 pub use self::frame::{CloseFrame, Frame, FrameHeader};
 
@@ -235,9 +238,24 @@ impl FrameCodec {
     where
         Stream: Write,
     {
+        #[inline]
+        fn warn_on_timing(elapsed: Duration) {
+            let threshold = Duration::from_secs(30);
+            if elapsed >= threshold {
+                println!(
+                    "WARNING!!! FrameCodec::write_out_buffer() took longer than {}s: {}ms",
+                    threshold.as_secs(),
+                    elapsed.as_millis()
+                );
+            }
+        }
+
+        let start = Instant::now();
         while !self.out_buffer.is_empty() {
             let len = stream.write(&self.out_buffer)?;
             if len == 0 {
+                warn_on_timing(start.elapsed());
+
                 // This is the same as "Connection reset by peer"
                 return Err(IoError::new(
                     IoErrorKind::ConnectionReset,
@@ -248,6 +266,7 @@ impl FrameCodec {
             self.out_buffer.drain(0..len);
         }
 
+        warn_on_timing(start.elapsed());
         Ok(())
     }
 }
